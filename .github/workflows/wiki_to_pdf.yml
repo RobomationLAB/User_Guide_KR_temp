@@ -4,14 +4,14 @@ on:
   schedule:
     - cron: '0 15 * * *' # (UTC 기준 15시 -> 한국 기준 0시) 마다 MD -> PDF 변환
   workflow_dispatch:
-  repository_dispatch:
-    types: [wiki-updated]
+  # repository_dispatch:
+  #   types: [wiki-updated]
 
 env:
   REPO_OWNER: RobomationLAB # github username 작성
   REPO_NAME: User_Guide_KR # main repository name 작성
   WIKI_REPO_NAME: User_Guide_KR.wiki # wiki repository name 작성
-  COMMITTER_NAME: github-actions[bot] 
+  COMMITTER_NAME: github-actions[bot]
   COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
   BRANCH: main
   GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -31,331 +31,77 @@ jobs:
           git clone https://${{ env.GH_TOKEN }}@github.com/${{ env.REPO_OWNER }}/${{ env.WIKI_REPO_NAME }}.git wiki
           cd wiki
           rm -r Home.md _Sidebar.md
-          
+
           git config user.name "${{ env.COMMITTER_NAME }}"
           git config user.email "${{ env.COMMITTER_EMAIL }}"
-
-      - name: Cache LaTeX packages
-        uses: actions/cache@v3
-        with:
-          path: |
-            /usr/share/texlive
-            /usr/share/texmf
-          key: ${{ runner.os }}-texlive-${{ hashFiles('**/*.md') }}
-          restore-keys: |
-            ${{ runner.os }}-texlive-
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             pandoc \
-            texlive-xetex \
-            texlive-fonts-recommended \
-            texlive-lang-cjk \
-            texlive-latex-extra \
-            texlive-lang-chinese \
-            lmodern \
             fonts-noto-cjk \
-            librsvg2-bin
+            fonts-noto-cjk-extra \
+            fonts-noto-color-emoji \
+            libpango-1.0-0 \
+            libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 \
+            libffi-dev
+          python3 -m pip install --upgrade pip
+          python3 -m pip install weasyprint
 
-      - name: Install wkhtmltopdf 0.12.6.1-3 (patched)
+      - name: Create HTML header (CSS)
         run: |
-          sudo apt-get update
-      
-          sudo apt-get install -y \
-            fontconfig \
-            libxrender1 \
-            xfonts-75dpi \
-            xfonts-base \
-            libjpeg-turbo8
-          wget -O /tmp/wkhtmltox_0.12.6.1-3.jammy_amd64.deb \
-            https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.jammy_amd64.deb
-          sudo apt-get install -y /tmp/wkhtmltox_0.12.6.1-3.jammy_amd64.deb
-
-      - name: Create custom font LaTeX header
-        run: |
-          cd wiki
-          cat > font-custom.tex << 'EOF'
-          % Package for image & svg
-          \usepackage{graphicx}
-          \usepackage{grffile}
-          
-          % Package for any font size
-          \usepackage{anyfontsize}
-
-          % Code highlighting and verbatim - 5pt font
-          \usepackage{fancyvrb}
-          \usepackage{fvextra}
-
-          % Define Highlighting environment for pandoc code blocks - 5pt
-          \DefineVerbatimEnvironment{Highlighting}{Verbatim}{
-            % fontsize=\fontsize{5pt}{6pt}\selectfont,
-            breaklines=true,
-            breaksymbolleft={},
-            showspaces=false,
-            showtabs=false,
-            commandchars=\\\{\}
-          }
-
-          % Override verbatim environment - 5pt
-          % \fvset{fontsize=\fontsize{5pt}{6pt}\selectfont}
-
-          % Inline code - 5pt font
-          \let\oldtexttt\texttt
-          % \renewcommand{\texttt}[1]{{\fontsize{5pt}{6pt}\selectfont\oldtexttt{#1}}}
+          cat > "$GITHUB_WORKSPACE/header.html" << 'EOF'
+          <style>
+          @page { margin: 1.5cm; @bottom-center { content: counter(page); } }
+          body { font-family: "Noto Sans CJK KR", "Noto Color Emoji", sans-serif; line-height: 1.5; font-size: 11pt; color: #222; }
+          h1, h2, h3, h4 { font-family: "Noto Sans CJK KR", sans-serif; }
+          h1 { border-bottom: 2px solid #444; padding-bottom: 4px; }
+          h2 { border-bottom: 1px solid #bbb; padding-bottom: 2px; margin-top: 1.4em; }
+          code, pre { font-family: "Noto Sans Mono CJK KR", monospace; }
+          pre { background: #f5f5f5; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
+          code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }
+          pre code { background: none; padding: 0; }
+          img { max-width: 100%; height: auto; vertical-align: middle; }
+          table { border-collapse: collapse; margin: 8px 0; }
+          th, td { border: 1px solid #ccc; padding: 4px 10px; }
+          th { background: #f0f0f0; }
+          hr { border: none; border-top: 1px solid #ddd; margin: 1.2em 0; }
+          </style>
           EOF
 
       - name: Generate PDFs
         run: |
           set -euo pipefail
 
-          # (중요) 한글 경로 안정화
+          # (안정) 한글 파일명/경로 로케일
           export LANG=C.UTF-8
           export LC_ALL=C.UTF-8
-          
-          # 메인 레포 assets가 있는지 확인
-          if [ ! -d "$GITHUB_WORKSPACE/assets" ]; then
-            echo "ERROR: $GITHUB_WORKSPACE/assets not found. (메인 레포에 assets 폴더가 없거나 checkout 경로가 다름)"
-            exit 1
-          fi
-          
-          cd wiki
-          
-          # (핵심) PDF 변환은 로컬 파일로 해야 안정적이므로,
-          # 메인 레포 assets를 wiki/assets로 동기화 (wiki에서 pandoc가 assets/...를 찾게끔)
-          rm -rf assets
-          mkdir -p assets
-          rsync -a --delete "$GITHUB_WORKSPACE/assets/" "./assets/"
-          
-          # 공통: <img> → ![](){ width=...\\linewidth } + raw 링크→로컬 assets + 이모지(⚙️/⚠️) 텍스트화
-          preprocess_md () {
-            local SRC="$1"
-            local OUT="$2"
-            python3 - <<'PY'
-          import re, os, unicodedata, hashlib, time
-          from urllib.parse import urlsplit, unquote
-          import urllib.request
-          
-          SRC = os.environ["SRC"]
-          OUT = os.environ["OUT"]
-          
-          RAW_PREFIXES = [
-            "https://raw.githubusercontent.com/RobomationLAB/User_Guide_KR/",
-          ]
 
-          REMOTE_DIR = "assets/__remote"
-          os.makedirs(REMOTE_DIR, exist_ok=True)
-          
-          # assets 실제 경로 맵 (NFC/NFD)
-          asset_map = {}
-          for root, _, files in os.walk("assets"):
-            for f in files:
-              p = os.path.join(root, f).replace("\\", "/")
-              for norm in ("NFC", "NFD"):
-                asset_map[unicodedata.normalize(norm, p)] = p
+          export HEADER="$GITHUB_WORKSPACE/header.html"
 
-          def normalize_path(p: str) -> str:
-            for norm in ("NFC", "NFD"):
-                cand = unicodedata.normalize(norm, p)
-                if cand in asset_map:
-                    return asset_map[cand]
-            return p
-
-          def guess_ext_from_content_type(ct: str) -> str:
-            ct = (ct or "").lower()
-            if "image/png" in ct: return ".png"
-            if "image/jpeg" in ct: return ".jpg"
-            if "image/webp" in ct: return ".webp"
-            if "image/gif" in ct: return ".gif"
-            if "image/svg+xml" in ct: return ".svg"
-            if "application/pdf" in ct: return ".pdf"
-            return ""
-
-          def download_remote(url: str) -> str:
-            # 혹시 URL 문자열에 개행이 섞였을 가능성 방어
-            url = url.replace("\r", "").replace("\n", "").strip()
-        
-            h = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
-        
-            # URL path에서 확장자 힌트
-            path_ext = os.path.splitext(urlsplit(url).path)[1].lower()
-        
-            # 이미 다운로드 되었으면 재사용(확장자가 달라질 수 있어 prefix로 탐색)
-            for ext in [path_ext, ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".pdf"]:
-                if ext and os.path.exists(f"{REMOTE_DIR}/{h}{ext}"):
-                    return f"{REMOTE_DIR}/{h}{ext}"
-        
-            # 다운로드 (간단 재시도)
-            last_err = None
-            for attempt in range(3):
-                try:
-                    req = urllib.request.Request(
-                        url,
-                        headers={"User-Agent": "Mozilla/5.0"}
-                    )
-                    with urllib.request.urlopen(req, timeout=30) as r:
-                        data = r.read()
-                        ct = r.headers.get("Content-Type", "")
-                    ext = guess_ext_from_content_type(ct) or path_ext
-                    if ext == ".jpeg": ext = ".jpg"
-                    if not ext:
-                        ext = ".png"  # 최후 fallback
-        
-                    out = f"{REMOTE_DIR}/{h}{ext}"
-                    with open(out, "wb") as f:
-                        f.write(data)
-                    return out
-                except Exception as e:
-                    last_err = e
-                    time.sleep(1.5 * (attempt + 1))
-        
-            raise RuntimeError(f"Failed to download: {url} ({last_err})")
-          
-          def url_to_local(url: str) -> str:
-            for pref in RAW_PREFIXES:
-              if url.startswith(pref):
-                u = urlsplit(url)
-                idx = u.path.find("/assets/")
-                if idx != -1:
-                  local = unquote(u.path[idx+1:])  # assets/...
-                  return normalize_path(local)
-            if not (url.startswith("http://") or url.startswith("https://")):
-              return normalize_path(url)
-            return download_remote(url)
-          
-          def width_to_opt(width: str) -> str:
-            w = width.strip().strip('"').strip("'")
-            m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*%", w)
-            if not m:
-              return ""
-            frac = float(m.group(1)) / 100.0
-            if frac <= 0:
-              return ""
-            return f"width={frac:.4f}\\linewidth"
-
-          def parse_width_from_img_attrs(attrs: str) -> str:
-            m = re.search(r'\bwidth="([^"]+)"', attrs, re.IGNORECASE)
-            if not m:
-                return ""
-            return width_to_opt(m.group(1))
-
-          def parse_width_from_md_attr(attr: str) -> str:
-            if not attr:
-                return ""
-            m = re.search(r'width\s*=\s*([0-9.]+\s*%)', attr, re.IGNORECASE)
-            if m:
-                return width_to_opt(m.group(1))
-            m2 = re.search(r'width\s*=\s*([0-9.]+\s*\\linewidth)', attr, re.IGNORECASE)
-            if m2:
-                return f"width={m2.group(1).strip()}"
-            return ""
-
-          def latex_block(indent: str, local_path: str, opt: str) -> str:
-            # fenced raw latex block (문맥/들여쓰기 안정)
-            if opt:
-                body = f"\\includegraphics[{opt}]{{{local_path}}}"
-            else:
-                body = f"\\includegraphics{{{local_path}}}"
-            return (
-                f"{indent}```{{=latex}}\n"
-                f"{indent}{body}\n"
-                f"{indent}```\n"
-            )
-            
-          s = open(SRC, "r", encoding="utf-8").read()
-          
-          # (1) 혹시 이전 실험으로 남은 "{ width: 100% }" 같은 잘못된 문법이 있으면 교정
-          s = re.sub(r"\{\s*width\s*:\s*([0-9.]+)\s*%\s*\}", "", s, flags=re.IGNORECASE)
-          
-          # (2) <img ...> → pandoc 이미지
-          img_pat = re.compile(
-            r'(^[ \t]*)<img\b([^>]*?)\bsrc="([^"]+)"([^>]*?)>\s*',
-            re.IGNORECASE | re.MULTILINE
-          )
-          
-          def repl_img(m):
-            indent = m.group(1)
-            attrs = (m.group(2) + " " + m.group(4))
-            src = m.group(3)
-            
-            local = url_to_local(src)
-            opt = parse_width_from_img_attrs(attrs)
-
-            return latex_block(indent, local, opt)
-          
-          s = img_pat.sub(repl_img, s)
-
-          md_img_pat = re.compile(
-            r'(^[ \t]*)!\[([^\]]*)\]\(([^)]+)\)\s*(\{[^}]*\})?\s*$',
-            re.MULTILINE
-          )
-
-          def repl_md_img(m):
-            indent = m.group(1)
-            alt = m.group(2)
-            url = m.group(3).strip()
-            attr = m.group(4) or ""
-        
-            local = url_to_local(url)
-            opt = parse_width_from_md_attr(attr)
-        
-            return latex_block(indent, local, opt)
-          
-          s = md_img_pat.sub(repl_md_img, s)
-          
-          s = re.sub(r"<br\s*/?>", "\n", s, flags=re.IGNORECASE)
-          
-          # (3) 이모지 글리프 경고 제거
-          s = s.replace("⚙️", "※").replace("⚙", "※")
-          s = s.replace("⚠️", "주의:").replace("⚠", "주의:")
-          
-          open(OUT, "w", encoding="utf-8").write(s)
-          
-          # (4) 존재 체크: 하나라도 없으면 바로 실패시켜 원인을 숨기지 않게 함
-          paths = re.findall(r'!\[[^\]]*\]\(([^)]+)\)', s)
-          missing = [p for p in paths if p.startswith("assets/") and not os.path.exists(p)]
-          # print("converted images:", len(paths))
-          # print("missing assets:", len(missing))
-          if missing:
-            print("sample missing:", missing[:10])
-            raise SystemExit(2)
-          PY
-          }
-          export -f preprocess_md
-          
+          # 단일 .md → PDF (weasyprint 가 raw URL 이미지를 네트워크로 fetch)
           build_pdf () {
             local IN_MD="$1"
             local OUT_PDF="$2"
-            local TMP_MD=".__tmp_pdf__.md"
-          
-            SRC="$IN_MD" OUT="$TMP_MD" preprocess_md "$IN_MD" "$TMP_MD"
-          
-            pandoc "$TMP_MD" \
-              --from markdown+raw_attribute \
-              --resource-path=".:./assets" \
-              --pdf-engine=xelatex \
-              -V mainfont="Noto Sans CJK KR" \
-              -V sansfont="Noto Sans CJK KR" \
-              -V monofont="Noto Sans Mono CJK KR" \
-              -V CJKmainfont="Noto Sans CJK KR" \
-              -V CJKsansfont="Noto Sans CJK KR" \
-              -V CJKmonofont="Noto Sans Mono CJK KR" \
-              -H font-custom.tex \
-              -V geometry:margin=1.5cm \
-              -V linestretch=1.5 \
-              -V fontsize=11pt \
-              --highlight-style=tango \
+            pandoc "$IN_MD" \
+              --standalone \
+              --from gfm \
+              --include-in-header="$HEADER" \
+              --pdf-engine=weasyprint \
+              --metadata title="$(basename "$OUT_PDF" .pdf)" \
+              --metadata lang=ko \
               -o "$OUT_PDF"
-          
-            rm -f "$TMP_MD"
           }
           export -f build_pdf
 
+          cd wiki
+
           # -----------------------------------------
-          # RobomationLAB-코딩-가이드.pdf
+          # RobomationLAB-코딩-가이드.pdf (그룹 병합)
           GUIDE_PAGES=("코딩-가이드" "코딩-규칙" "커스텀-함수")
-          
+
           echo "# RobomationLAB 코딩 가이드" > RobomationLAB-코딩-가이드.md
           echo "" >> RobomationLAB-코딩-가이드.md
           for page in "${GUIDE_PAGES[@]}"; do
@@ -369,13 +115,13 @@ jobs:
               echo "" >> RobomationLAB-코딩-가이드.md
             fi
           done
-          
+
           build_pdf "RobomationLAB-코딩-가이드.md" "RobomationLAB-코딩-가이드.pdf"
-          
+
           # -----------------------------------------
-          # 구성-요소-및-사용-방법.pdf
+          # 구성-요소-및-사용-방법.pdf (그룹 병합)
           USAGE_PAGES=("상단-메뉴" "에디터" "미리보기")
-          
+
           echo "# 구성 요소 및 사용 방법" > 구성-요소-및-사용-방법.md
           echo "" >> 구성-요소-및-사용-방법.md
           for page in "${USAGE_PAGES[@]}"; do
@@ -389,41 +135,24 @@ jobs:
               echo "" >> 구성-요소-및-사용-방법.md
             fi
           done
-          
+
           build_pdf "구성-요소-및-사용-방법.md" "구성-요소-및-사용-방법.pdf"
-          
+
           # -----------------------------------------
-          # 기본-블록.pdf
-          BLOCK_PAGES=("논리" "조건문" "반복" "연산" "문자열" "리스트" "색상" "소리" "제어" "변수" "함수" "기타")
-          
-          echo "# 기본 블록" > 기본-블록.md
-          echo "" >> 기본-블록.md
-          for page in "${BLOCK_PAGES[@]}"; do
-            file="${page}.md"
-            if [ -f "$file" ]; then
-              echo "# $page" >> 기본-블록.md
-              echo "" >> 기본-블록.md
-              cat "$file" >> 기본-블록.md
-              echo "" >> 기본-블록.md
-              echo "---" >> 기본-블록.md
-              echo "" >> 기본-블록.md
-            fi
-          done
-          
-          build_pdf "기본-블록.md" "기본-블록.pdf"
-          
+          # 기본 블록 페이지: 병합하지 않고 각 페이지를 개별 PDF로 생성한다.
+          # (아래 "나머지 Wiki 파일 개별 PDF" 루프에서 각각 처리됨)
+
           # -----------------------------------------
           # 나머지 Wiki 파일 개별 PDF
           for file in *.md; do
             base=$(basename "$file" .md)
-          
-            if [[ " ${GUIDE_PAGES[*]} " =~ " ${base} " || " ${USAGE_PAGES[*]} " =~ " ${base} " || " ${BLOCK_PAGES[*]} " =~ " ${base} " || "$base" = "Home" || "$base" = "_Sidebar" ]]; then
+
+            if [[ " ${GUIDE_PAGES[*]} " =~ " ${base} " || " ${USAGE_PAGES[*]} " =~ " ${base} " || "$base" = "Home" || "$base" = "_Sidebar" ]]; then
               continue
             fi
-          
+
             build_pdf "$file" "${base}.pdf"
           done
-
 
       - name: Commit PDF to repository
         run: |
@@ -431,12 +160,12 @@ jobs:
 
           mkdir -p MD
           mv wiki/*.md MD/
-        
+
           mkdir -p PDF
           mv wiki/*.pdf PDF/
-          
+
           rm -rf wiki/
-        
+
           git config user.name "${COMMITTER_NAME}"
           git config user.email "${COMMITTER_EMAIL}"
           git remote set-url origin https://x-access-token:${{ env.GH_TOKEN }}@github.com/${REPO_OWNER}/${REPO_NAME}.git
@@ -444,7 +173,7 @@ jobs:
           git reset --hard origin/$BRANCH
           git add PDF/*.pdf
           git add MD/*.md
-          
+
           if ! git diff --staged --quiet; then
             git commit -m "Update Wiki to PDFs"
             git push origin $BRANCH
