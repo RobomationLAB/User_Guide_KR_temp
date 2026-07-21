@@ -100,54 +100,55 @@ jobs:
 
           # -----------------------------------------
           # RobomationLAB-코딩-가이드.pdf (그룹 병합)
-          GUIDE_PAGES=("코딩-가이드" "코딩-규칙" "커스텀-함수")
+          # GUIDE_PAGES=("코딩-가이드" "코딩-규칙" "커스텀-함수")
 
-          echo "# RobomationLAB 코딩 가이드" > RobomationLAB-코딩-가이드.md
-          echo "" >> RobomationLAB-코딩-가이드.md
-          for page in "${GUIDE_PAGES[@]}"; do
-            file="${page}.md"
-            if [ -f "$file" ]; then
-              echo "# $page" >> RobomationLAB-코딩-가이드.md
-              echo "" >> RobomationLAB-코딩-가이드.md
-              cat "$file" >> RobomationLAB-코딩-가이드.md
-              echo "" >> RobomationLAB-코딩-가이드.md
-              echo "---" >> RobomationLAB-코딩-가이드.md
-              echo "" >> RobomationLAB-코딩-가이드.md
-            fi
-          done
+          # echo "# RobomationLAB 코딩 가이드" > RobomationLAB-코딩-가이드.md
+          # echo "" >> RobomationLAB-코딩-가이드.md
+          # for page in "${GUIDE_PAGES[@]}"; do
+          #   file="${page}.md"
+          #   if [ -f "$file" ]; then
+          #     echo "# $page" >> RobomationLAB-코딩-가이드.md
+          #     echo "" >> RobomationLAB-코딩-가이드.md
+          #     cat "$file" >> RobomationLAB-코딩-가이드.md
+          #     echo "" >> RobomationLAB-코딩-가이드.md
+          #     echo "---" >> RobomationLAB-코딩-가이드.md
+          #     echo "" >> RobomationLAB-코딩-가이드.md
+          #   fi
+          # done
 
-          build_pdf "RobomationLAB-코딩-가이드.md" "RobomationLAB-코딩-가이드.pdf"
+          # build_pdf "RobomationLAB-코딩-가이드.md" "RobomationLAB-코딩-가이드.pdf"
 
           # -----------------------------------------
           # 구성-요소-및-사용-방법.pdf (그룹 병합)
-          USAGE_PAGES=("상단-메뉴" "에디터" "미리보기")
+          # USAGE_PAGES=("상단-메뉴" "에디터" "미리보기")
 
-          echo "# 구성 요소 및 사용 방법" > 구성-요소-및-사용-방법.md
-          echo "" >> 구성-요소-및-사용-방법.md
-          for page in "${USAGE_PAGES[@]}"; do
-            file="${page}.md"
-            if [ -f "$file" ]; then
-              echo "# $page" >> 구성-요소-및-사용-방법.md
-              echo "" >> 구성-요소-및-사용-방법.md
-              cat "$file" >> 구성-요소-및-사용-방법.md
-              echo "" >> 구성-요소-및-사용-방법.md
-              echo "---" >> 구성-요소-및-사용-방법.md
-              echo "" >> 구성-요소-및-사용-방법.md
-            fi
-          done
+          # echo "# 구성 요소 및 사용 방법" > 구성-요소-및-사용-방법.md
+          # echo "" >> 구성-요소-및-사용-방법.md
+          # for page in "${USAGE_PAGES[@]}"; do
+          #   file="${page}.md"
+          #   if [ -f "$file" ]; then
+          #     echo "# $page" >> 구성-요소-및-사용-방법.md
+          #     echo "" >> 구성-요소-및-사용-방법.md
+          #     cat "$file" >> 구성-요소-및-사용-방법.md
+          #     echo "" >> 구성-요소-및-사용-방법.md
+          #     echo "---" >> 구성-요소-및-사용-방법.md
+          #     echo "" >> 구성-요소-및-사용-방법.md
+          #   fi
+          # done
 
-          build_pdf "구성-요소-및-사용-방법.md" "구성-요소-및-사용-방법.pdf"
+          # build_pdf "구성-요소-및-사용-방법.md" "구성-요소-및-사용-방법.pdf"
 
           # -----------------------------------------
           # 기본 블록 페이지: 병합하지 않고 각 페이지를 개별 PDF로 생성한다.
           # (아래 "나머지 Wiki 파일 개별 PDF" 루프에서 각각 처리됨)
 
           # -----------------------------------------
-          # 나머지 Wiki 파일 개별 PDF
+          # Wiki 파일 개별 PDF
           for file in *.md; do
             base=$(basename "$file" .md)
 
-            if [[ " ${GUIDE_PAGES[*]} " =~ " ${base} " || " ${USAGE_PAGES[*]} " =~ " ${base} " || "$base" = "Home" || "$base" = "_Sidebar" ]]; then
+            # " ${GUIDE_PAGES[*]} " =~ " ${base} " || " ${USAGE_PAGES[*]} " =~ " ${base} " || 
+            if [[ "$base" = "Home" || "$base" = "_Sidebar" ]]; then
               continue
             fi
 
